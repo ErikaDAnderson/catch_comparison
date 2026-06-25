@@ -91,25 +91,24 @@ fishery_list_parsed AS (
 ),
 -- ================= OPENINGS ===============================================
 op AS (
-  SELECT fy.fishery_nme,
-         lic.lic_grp_nme AS licence_area,
-         lic.lic_lic_id,
-         pd.pd_id,
-         TRUNC(pd.pd_start_dtt) as pd_start_dtt,
-         FOS_V1_1.fos_pkg.getVesselForLic(lic.lic_id, pd.pd_start_dtt) AS vessel_id
-  FROM FOS_V1_1.season sn
-  JOIN FOS_V1_1.fishry_opening fo
-    ON sn.fshry_fishery_id = fo.fshry_fishery_id
-   AND sn.season_id = fo.season_id
-  JOIN FOS_V1_1.fishery fy 
-    ON fy.fishery_id = fo.fshry_fishery_id
-  JOIN FOS_V1_1.period pd 
-    ON fo.opng_id = pd.opng_opng_id
-  JOIN FOS_V1_1.opening_lic ol
-    ON  fo.opng_id = ol.opng_opng_id
-  JOIN FOS_V1_1.licence lic 
-    ON  ol.lic_lic_id = lic.lic_id  
-    CROSS JOIN params p 
+   SELECT fy.fishery_nme,lic.lic_grp_nme AS licence_area, fo.opng_desc, oc.opng_cat, pd.pd_id, fo.opng_id, oa.fa_fa_id,
+         TRUNC(pd.pd_start_dtt) AS pd_start_dtt
+    FROM FOS_V1_1.season sn
+    JOIN FOS_V1_1.fishry_opening fo
+      ON sn.fshry_fishery_id = fo.fshry_fishery_id
+     AND sn.season_id = fo.season_id
+    JOIN FOS_V1_1.fishery fy ON fy.fishery_id = fo.fshry_fishery_id
+    JOIN FOS_V1_1.opening_area oa ON oa.opng_opng_ID = fo.opng_id
+    JOIN FOS_V1_1.period pd ON fo.opng_id = pd.opng_opng_id
+    JOIN FOS_V1_1.opening_lic ol ON  fo.opng_id = ol.opng_opng_id
+  JOIN FOS_V1_1.licence lic ON  ol.lic_lic_id = lic.lic_id  
+    JOIN (
+      SELECT oat.atin_id opng_id, cat.csm_opng_cat_nme opng_cat
+      FROM FOS_V1_1.attr_instance oat
+      JOIN FOS_V1_1.csm_opng_cat_vw cat ON cat.csm_opng_cat_id = oat.atin_val
+      WHERE oat.attr_cde='CSM_OPNG_CAT' AND oat.attent_cde='OPNG'
+    ) oc ON fo.opng_id = oc.opng_id 
+    CROSS JOIN params p
  WHERE (
         p.fishery_id IS NULL
         OR sn.fshry_fishery_id IN (SELECT fishery_id FROM fishery_list_parsed)
@@ -117,16 +116,22 @@ op AS (
     AND TRUNC(pd.pd_start_dtt) BETWEEN p.start_date AND p.end_date
 ),
 
--- ================= CATCH (FULL SPECIES) ====================================
+-- ================= CATCH  ====================================
 rc AS (
   SELECT
-    cr.crpt_id,
-    cr.pd_pd_id pd_id,
-    pd.pd_start_dtt,
-    fe.fe_id,
-    pm.pfma AS mgmt_area,
-    fe.fe_effort,
-    fe.fe_hrs_fished,
+        fo.fshry_fishery_id,
+        fo.opng_id,
+        cr.crpt_id,
+         cr.pd_pd_id AS pd_id,
+         pd.pd_start_dtt,
+         FOS_V1_1.fos_pkg.licname(cr.lic_lic_id, pd.pd_start_dtt, pd.pd_end_dtt) AS licence,
+         cr.crpt_logbook_no AS logbook,
+         ds.cdsrc_nme AS data_source,
+         fe.fe_id,
+         fe.fa_fa_id AS fa_id,
+         pm.pfma as mgmt_area,
+         fa.fa_nme,
+         fe.fe_effort,
          SUM(DECODE(ca.species_species_cde,'118',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,0,ca.catch_qty)))) AS sockeye_kept,
          SUM(DECODE(ca.species_species_cde,'118',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,1,ca.catch_qty)))) AS sockeye_reld,
          SUM(DECODE(ca.species_species_cde,'115',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,0,ca.catch_qty)))) AS coho_kept,
@@ -139,13 +144,18 @@ rc AS (
          SUM(DECODE(ca.species_species_cde,'124',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,1,ca.catch_qty)))) AS chinook_reld,
          SUM(DECODE(ca.species_species_cde,'128',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,0,ca.catch_qty)))) AS steelhead_kept,
          SUM(DECODE(ca.species_species_cde,'128',DECODE(ca.mat_mat_cde,1,DECODE(ca.catch_released,1,ca.catch_qty)))) AS steelhead_reld
-         
-  FROM FOS_V1_1.period pd
-  JOIN FOS_V1_1.crpt_vw cr ON pd.pd_id = cr.pd_pd_id
-  JOIN FOS_V1_1.fe_vw fe  ON cr.crpt_id = fe.crpt_crpt_id
-  JOIN FOS_V1_1.catch ca  ON fe.fe_id = ca.fe_fe_id
-  JOIN FOS_V1_1.fishry_area fa ON fa.fa_id = fe.fa_fa_id
-
+    FROM FOS_V1_1.season sn
+    JOIN FOS_V1_1.fishry_opening fo
+      ON sn.fshry_fishery_id = fo.fshry_fishery_id
+     AND sn.season_id = fo.season_id
+    JOIN FOS_V1_1.period pd ON fo.opng_id = pd.opng_opng_id
+    JOIN FOS_V1_1.crpt_vw cr ON pd.pd_id = cr.pd_pd_id
+    JOIN FOS_V1_1.fe_vw fe  ON cr.crpt_id = fe.crpt_crpt_id
+    JOIN FOS_V1_1.catch ca  ON fe.fe_id = ca.fe_fe_id
+    JOIN FOS_V1_1.observer ob ON cr.obsvr_obsvr_id = ob.obsvr_id
+    JOIN FOS_V1_1.catch_data_source ds ON cr.cdsrc_cdsrc_id = ds.cdsrc_id
+    JOIN FOS_V1_1.fishry_area fa ON fa.fa_id = fe.fa_fa_id
+    
   LEFT JOIN pfma_map pm
     ON (CASE WHEN fa.fa_fa_id IS NULL THEN fa.fa_id ELSE fa.fa_fa_id END) = pm.fa_id
 
@@ -161,20 +171,106 @@ AND (
       OR pm.pfma IN (SELECT pfma FROM pfma_list_parsed)
     )
 
-  GROUP BY cr.crpt_id, cr.pd_pd_id, pd.pd_start_dtt, fe.fe_id, pm.pfma,
-           fe.fe_effort, fe.fe_hrs_fished
+       GROUP BY  fo.fshry_fishery_id,
+        fo.opng_id,
+        cr.crpt_id,
+         cr.pd_pd_id,
+         pd.pd_start_dtt,
+         FOS_V1_1.fos_pkg.licname(cr.lic_lic_id, pd.pd_start_dtt, pd.pd_end_dtt),
+         cr.crpt_logbook_no,
+         ds.cdsrc_nme,
+         fe.fe_id,
+         fe.fa_fa_id,
+         pm.pfma,
+         fa.fa_nme,
+         fe.fe_effort
 ),
 
--- ================= FINAL AGG ==============================================
+---=================Filter duplicates======================================
+joined AS (
+  SELECT TO_CHAR(op.pd_start_dtt,'YYYY') AS cal_year,
+         op.fishery_nme as fishery,
+         op.pd_id,
+         rc.crpt_id,
+         rc.fe_id,
+         op.fishery_nme,
+         op.opng_cat,
+         op.opng_desc,
+         op.opng_id,
+         op.pd_start_dtt,
+         TO_CHAR(op.pd_start_dtt,'YYYY-MM-DD') AS pd_start_date,
+         rc.mgmt_area,
+         rc.fa_nme AS area_name,
+         rc.licence,
+         rc.logbook,
+         rc.data_source,
+         UPPER(REGEXP_REPLACE(rc.data_source,'[^A-Z]')) AS ds_code,
+         rc.fe_effort, 
+         rc.sockeye_kept, rc.sockeye_reld,
+         rc.coho_kept, rc.coho_reld,
+         rc.pink_kept, rc.pink_reld,
+         rc.chum_kept, rc.chum_reld,
+         rc.chinook_kept, rc.chinook_reld,
+         rc.steelhead_kept, rc.steelhead_reld
+    FROM op JOIN rc ON op.pd_id = rc.pd_id
+    AND op.pd_start_dtt = rc.pd_start_dtt
+    AND op.fa_fa_id = rc.fa_id
+),
+grp AS (
+  SELECT fishery, opng_cat, opng_desc, opng_id, pd_start_dtt, area_name, licence,
+         MAX(CASE WHEN fe_effort = 1 THEN 1 ELSE 0 END) AS has_effort_one,
+         MAX(CASE WHEN fe_effort < 1 THEN 1 ELSE 0 END) AS has_effort_lt1,
+         MAX(CASE WHEN ds_code = 'LOGBOOK' THEN 1 ELSE 0 END) AS has_logbook,
+         MAX(CASE WHEN ds_code = 'PHONEIN' THEN 1 ELSE 0 END) AS has_phonein
+    FROM joined
+   GROUP BY fishery, opng_cat, opng_desc, opng_id, pd_start_dtt, area_name, licence
+),
+filtered AS (
+  SELECT j.*,
+         CASE
+           WHEN g.has_effort_one = 1 AND (
+                (g.has_logbook = 1 AND j.ds_code='LOGBOOK' AND j.fe_effort = 1) OR
+                (g.has_logbook = 0 AND j.fe_effort = 1)
+           ) THEN 'One'
+           WHEN g.has_effort_one = 0 AND g.has_effort_lt1 = 1 AND (
+                (g.has_logbook = 1 AND j.ds_code='LOGBOOK') OR
+                (g.has_logbook = 0 AND j.ds_code='PHONEIN')
+           ) THEN 'LT1'
+           ELSE 'Other'
+         END AS selection_flag
+    FROM joined j
+    JOIN grp g
+      ON j.fishery   = g.fishery
+     AND j.opng_cat  = g.opng_cat
+     AND j.opng_desc = g.opng_desc
+     AND j.opng_id = g.opng_id
+     AND j.pd_start_dtt   = g.pd_start_dtt
+     AND j.area_name = g.area_name
+     AND j.licence   = g.licence
+    CROSS JOIN params p
+   WHERE ((
+         ( g.has_effort_one = 1 AND (
+              (g.has_logbook = 1 AND j.ds_code='LOGBOOK' AND j.fe_effort = 1)
+           OR (g.has_logbook = 0 AND j.fe_effort = 1)
+           ) )
+      OR ( g.has_effort_one = 0 AND g.has_effort_lt1 = 1 AND (
+              (g.has_logbook = 1 AND j.ds_code='LOGBOOK')
+           OR (g.has_logbook = 0 AND j.ds_code='PHONEIN')
+           ) )
+      OR ( g.has_effort_one = 0 AND g.has_effort_lt1 = 0 )
+      )
+    )
+),
+-- ================= Aggregated ============================================
 agg AS (
   SELECT
     op.fishery_nme AS fishery,
-    op.licence_area,
     'Fisher-reported' AS estimate_type,
+    op.licence_area,
     EXTRACT(YEAR FROM op.pd_start_dtt) AS calendar_year, 
     rc.mgmt_area AS mgmt_area,
-    COUNT(DISTINCT op.vessel_id) AS vessel_count,
-    SUM(rc.fe_effort) AS boat_days,
+    count(distinct rc.licence) AS vessel_count,
+    sum(rc.fe_effort) as boat_days,
     SUM(rc.sockeye_kept) sockeye_kept,
     SUM(rc.sockeye_reld) sockeye_reld,
     SUM(rc.coho_kept) coho_kept,
@@ -187,39 +283,21 @@ agg AS (
     SUM(rc.chinook_reld) chinook_reld,
     SUM(rc.steelhead_kept) steelhead_kept,
     SUM(rc.steelhead_reld) steelhead_reld,
-    CAST(NULL AS VARCHAR2(200)) AS notes --do we need this?
+    CAST(NULL AS VARCHAR2(200)) AS notes --not used in fisher reported but keep for join
 
   FROM op
-  JOIN rc ON op.pd_id = rc.pd_id
-
-GROUP BY
+  JOIN rc 
+    ON op.opng_id = rc.opng_id
+      AND op.pd_start_dtt = rc.pd_start_dtt
+      AND op.fa_fa_id = rc.fa_id
+      GROUP BY
   op.fishery_nme,
   op.licence_area,
   EXTRACT(YEAR FROM op.pd_start_dtt),
   rc.mgmt_area
 )
 
-SELECT
-  fishery,
-  estimate_type,
-  licence_area,
-  calendar_year,
-  mgmt_area,
-  vessel_count,
-  boat_days,
-  sockeye_kept,
-  sockeye_reld,
-  coho_kept,
-  coho_reld,
-  pink_kept,
-  pink_reld,
-  chum_kept,
-  chum_reld,
-  chinook_kept,
-  chinook_reld,
-  steelhead_kept,
-  steelhead_reld,
-  notes
+SELECT *
 FROM agg
 ORDER BY
   calendar_year DESC,

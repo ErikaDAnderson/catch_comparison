@@ -13,7 +13,7 @@ library(readr)
 start_date <- "04/01/2020 00:00"
 end_date <- "03/31/2021 23:59"
 ATIP_SAFE <- "N"
-pfma_list <- "8,9,10"
+pfma_list <- "23,101"
 fishery_list <- "5,6,7"
 # 5 is salmon gillnet
 # 6 is salmon seine
@@ -35,10 +35,14 @@ oracle_con <- connect_oracle(config)
 #test connection
 #DBI::dbGetQuery(oracle_con, "SELECT SYSDATE FROM dual")
 
-#read sql code for in-season estimates
+#read sql code
 in_season_sql <- readr::read_file(
   paste0(getwd(),"/sql/in_season_estimates.sql")
   )
+
+fisher_reported_sql <- readr::read_file(
+  paste0(getwd(),"/sql/fisher_reported_estimates.sql")
+)
 
 # query in-season estimate data
 in_season_df <- query_df(oracle_con, in_season_sql,
@@ -49,17 +53,13 @@ in_season_df <- query_df(oracle_con, in_season_sql,
                              fishery_list = fishery_list)
 )
 
-
-# # query fisher reported estimate data
-# fisher_df <- query_df(oracle_con, fisher_reported_estimates.sql,
-#                          params = list(start_date = start_date,
-#                                        end_date = end_date,
-#                                        pfma_list = pfma_list,
-#                                        fishery_list = fishery_list)
-# )
-
-#  names(df) <- clean_column_names(names(df))
-
+# query fisher reported estimate data
+fisher_df <- query_df(oracle_con, fisher_reported_sql,
+                         params = list(start_date = start_date,
+                                       end_date = end_date,
+                                       pfma_list = pfma_list,
+                                       fishery_list = fishery_list)
+)
 
 # close connection
 DBI::dbDisconnect(oracle_con)
