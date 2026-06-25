@@ -9,11 +9,15 @@ library(ROracle)
 library(getPass)
 library(readr)
 
-#define parameters used in script
+#define parameters used in scripts
 start_date <- "04/01/2020 00:00"
 end_date <- "03/31/2021 23:59"
-# f_start_date <- "2020-04-01"
-# f_end_date <-  "2021-03-31"
+ATIP_SAFE <- "N"
+pfma_list <- "8,9,10"
+fishery_list <- "5,6,7"
+# 5 is salmon gillnet
+# 6 is salmon seine
+# 7 is salmon troll
 
 # load helper functions
 rdirectory <- paste0(getwd(), "/rscripts")
@@ -37,20 +41,22 @@ in_season_sql <- readr::read_file(
   )
 
 # query in-season estimate data
-df <- query_df(oracle_con, in_season_sql,
+in_season_df <- query_df(oracle_con, in_season_sql,
                params = list(start_date = start_date,
-                             end_date = end_date)
+                             end_date = end_date,
+                             ATIP_SAFE = ATIP_SAFE,
+                             pfma_list = pfma_list,
+                             fishery_list = fishery_list)
 )
 
 
-# # query in-season estimate data
-# df <- query_df(oracle_con, "SELECT *
-#                  FROM fos_v1_1.fishing_event fe
-#                WHERE fe.fe_id = :ID",
-#                params = list(ID = 3958560)
+# # query fisher reported estimate data
+# fisher_df <- query_df(oracle_con, fisher_reported_estimates.sql,
+#                          params = list(start_date = start_date,
+#                                        end_date = end_date,
+#                                        pfma_list = pfma_list,
+#                                        fishery_list = fishery_list)
 # )
-
-
 
 #  names(df) <- clean_column_names(names(df))
 
